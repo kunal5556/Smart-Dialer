@@ -1,4 +1,4 @@
-# SmartDialer
+# Smart Dialer
 
 A safe, concurrency-aware outbound dialing system for collections agents.
 
