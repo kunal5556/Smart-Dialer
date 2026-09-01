@@ -209,3 +209,48 @@ async def test_partial_allocation_leaves_nothing_reserved(test_database, call_al
     assert (
         await test_database["agents"].count_documents({"state": AgentState.AVAILABLE.value}) == 3
     )
+
+
+async def test_the_allocator_binds_the_call_to_the_agent(test_database, call_allocator):
+    campaign = await insert_campaign(test_database)
+    await insert_agents(test_database, campaign.id, 1, state=AgentState.AVAILABLE)
+    await insert_borrowers(test_database, campaign.id, 1)
+
+    await call_allocator.allocate(campaign, approve(campaign.id, 1), "worker-1")
+
+    call = await test_database["calls"].find_one({})
+    agent = await test_database["agents"].find_one({"_id": call["agent_id"]})
+
+    assert agent["current_call_id"] == call["_id"]
+    assert agent["state"] == AgentState.DIALING.value
+
+
+async def test_a_disappearing_agent_has_its_dialled_call_cancelled(
+    test_database, call_allocator, recovery_worker, test_settings
+):
+    from datetime import timedelta
+
+    campaign = await insert_campaign(test_database)
+    await insert_agents(test_database, campaign.id, 1, state=AgentState.AVAILABLE)
+    await insert_borrowers(test_database, campaign.id, 1)
+    await call_allocator.allocate(campaign, approve(campaign.id, 1), "worker-1")
+
+    await test_database["agents"].update_many(
+        {},
+        {
+            "$set": {
+                "last_heartbeat_at": utc_now()
+                - timedelta(seconds=test_settings.AGENT_HEARTBEAT_TIMEOUT_SECONDS + 60)
+            }
+        },
+    )
+
+    await recovery_worker.run_sweeps()
+
+    call = await test_database["calls"].find_one({})
+    agent = await test_database["agents"].find_one({})
+
+    assert agent["state"] == AgentState.OFFLINE.value
+    assert call["state"] == CallState.CANCELLED.value
+    assert call["failure_reason"] == "agent_disappeared"
+    assert call["terminal"] is True

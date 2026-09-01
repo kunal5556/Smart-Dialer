@@ -75,7 +75,7 @@ between them.
 - A **simulation harness** with four scenarios plus fault injection, driving the real system
 - A **FastAPI** HTTP API and a **Streamlit** dashboard
 - **Load tests** with measured numbers and an honest scalability analysis
-- **735 automated tests**, including an executable version of the acceptance criteria
+- **725 automated tests**, including an executable version of the acceptance criteria
 
 ---
 
@@ -188,7 +188,7 @@ complete SB/
 │   ├── formatting.py             display helpers
 │   ├── views/                    one module per panel
 │   └── requirements.txt          streamlit, requests, pandas — nothing else
-├── tests/                        735 tests
+├── tests/                        725 tests
 ├── loadtest/                     throughput and contention measurement
 ├── scripts/                      seed_data, seed_production, run_simulation
 ├── docs/                         architecture, ADR, state machines, scalability, deployment
@@ -639,8 +639,9 @@ Stated plainly rather than hidden:
   mitigation and the exposure window is bounded by `RESERVATION_TTL_SECONDS`.
 - **In-process metrics counters** (contention, retries) would undercount across multiple instances.
   The persisted `metrics_samples` are the cross-process source.
-- **Utilization has a tail error**: time is accounted on transition, so an agent mid-call when a run
-  ends has unaccounted time. Over a long run this is small.
+- **Utilization counts time in the current state as well as completed time**, so a live campaign
+  reports a real number rather than lagging a whole call behind. It is still a point-in-time ratio,
+  so a very short run reports a low figure simply because little time has accrued.
 - **Free-tier hosts sleep**, and with two deployed processes there are two independent cold starts.
 - **The dashboard is a ~2 s snapshot**, not a live stream. Events faster than a refresh cycle appear
   in the data but are not animated.

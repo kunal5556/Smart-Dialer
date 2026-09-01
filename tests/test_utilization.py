@@ -171,3 +171,67 @@ async def test_offline_time_is_not_accumulated(
 
     assert online.busy_time_ms == 0
     assert online.available_time_ms == 0
+
+
+def test_time_in_the_current_state_counts_toward_utilization():
+    from datetime import timedelta
+
+    from app.models.base import utc_now
+
+    now = utc_now()
+    talking = make_agent(
+        state=AgentState.CONNECTED,
+        state_changed_at=now - timedelta(seconds=60),
+        busy_time_ms=0,
+        available_time_ms=40 * SECOND_MS,
+    )
+
+    utilization = agent_utilization(talking, now=now)
+
+    assert utilization.connected_time_ms == pytest.approx(60 * SECOND_MS, abs=50)
+    assert utilization.talk_utilization == pytest.approx(0.6, abs=0.01)
+
+
+def test_an_idle_agent_accrues_available_time_not_talk_time():
+    from datetime import timedelta
+
+    from app.models.base import utc_now
+
+    now = utc_now()
+    idle = make_agent(state=AgentState.AVAILABLE, state_changed_at=now - timedelta(seconds=30))
+
+    utilization = agent_utilization(idle, now=now)
+
+    assert utilization.connected_time_ms == 0
+    assert utilization.counted_time_ms == pytest.approx(30 * SECOND_MS, abs=50)
+    assert utilization.talk_utilization == 0.0
+
+
+def test_offline_time_is_still_excluded_from_the_live_denominator():
+    from datetime import timedelta
+
+    from app.models.base import utc_now
+
+    now = utc_now()
+    away = make_agent(state=AgentState.OFFLINE, state_changed_at=now - timedelta(hours=1))
+
+    utilization = agent_utilization(away, now=now)
+
+    assert utilization.counted_time_ms == 0
+    assert utilization.talk_utilization is None
+
+
+def test_campaign_utilization_counts_agents_currently_talking():
+    from datetime import timedelta
+
+    from app.models.base import utc_now
+
+    now = utc_now()
+    agents = [
+        make_agent(state=AgentState.CONNECTED, state_changed_at=now - timedelta(seconds=50)),
+        make_agent(state=AgentState.AVAILABLE, state_changed_at=now - timedelta(seconds=50)),
+    ]
+
+    utilization = campaign_utilization(agents, now=now)
+
+    assert utilization.talk_utilization == pytest.approx(0.5, abs=0.01)

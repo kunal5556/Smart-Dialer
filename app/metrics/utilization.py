@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from app.models.agent import Agent
+from app.models.base import utc_now
 from app.models.enums import AgentState
 
 UTILIZATION_DENOMINATOR_STATES = frozenset(
@@ -40,10 +42,29 @@ def _ratio(numerator: int, denominator: int) -> float | None:
     return numerator / denominator
 
 
-def agent_utilization(agent: Agent) -> AgentUtilization:
+def elapsed_in_current_state_ms(agent: Agent, now: datetime) -> int:
+    if agent.state not in UTILIZATION_DENOMINATOR_STATES:
+        return 0
+    return max(0, int((now - agent.state_changed_at).total_seconds() * 1000))
+
+
+def _live_totals(agent: Agent, now: datetime) -> tuple[int, int, int]:
+    elapsed = elapsed_in_current_state_ms(agent, now)
+
     connected = agent.connected_time_ms
-    productive = agent.connected_time_ms + agent.wrap_up_time_ms
-    counted = agent.busy_time_ms + agent.available_time_ms
+    wrap_up = agent.wrap_up_time_ms
+    counted = agent.busy_time_ms + agent.available_time_ms + elapsed
+
+    if agent.state is AgentState.CONNECTED:
+        connected += elapsed
+    elif agent.state is AgentState.WRAP_UP:
+        wrap_up += elapsed
+
+    return connected, connected + wrap_up, counted
+
+
+def agent_utilization(agent: Agent, now: datetime | None = None) -> AgentUtilization:
+    connected, productive, counted = _live_totals(agent, now or utc_now())
 
     return AgentUtilization(
         agent_id=agent.id,
@@ -55,10 +76,16 @@ def agent_utilization(agent: Agent) -> AgentUtilization:
     )
 
 
-def campaign_utilization(agents: list[Agent]) -> CampaignUtilization:
-    connected = sum(agent.connected_time_ms for agent in agents)
-    productive = sum(agent.connected_time_ms + agent.wrap_up_time_ms for agent in agents)
-    counted = sum(agent.busy_time_ms + agent.available_time_ms for agent in agents)
+def campaign_utilization(
+    agents: list[Agent],
+    now: datetime | None = None,
+) -> CampaignUtilization:
+    moment = now or utc_now()
+    totals = [_live_totals(agent, moment) for agent in agents]
+
+    connected = sum(item[0] for item in totals)
+    productive = sum(item[1] for item in totals)
+    counted = sum(item[2] for item in totals)
 
     return CampaignUtilization(
         connected_time_ms=connected,

@@ -157,6 +157,7 @@ class CallAllocator:
             actor=TransitionActor.ALLOCATOR,
             expected_version=pair.agent.state_version,
         )
+        await self._agents.bind_call(pair.agent.id, pair.worker_id, call.id)
 
         result = await self._originate(campaign, pair, call.id)
         if result is None or not result.accepted:

@@ -171,6 +171,16 @@ class AgentRepository(BaseRepository):
             return None
         return Agent.from_mongo(document)
 
+    async def bind_call(self, agent_id: str, worker_id: str, call_id: str) -> Agent | None:
+        document = await self.collection.find_one_and_update(
+            {"_id": agent_id, "reserved_by": worker_id},
+            {"$set": {"current_call_id": call_id}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if document is None:
+            return None
+        return Agent.from_mongo(document)
+
     async def count_by_state(self, campaign_id: str) -> dict[AgentState, int]:
         pipeline = [
             {"$match": {"campaign_id": campaign_id}},

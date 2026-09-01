@@ -165,7 +165,7 @@ async def test_utilization_is_reported_from_agent_time_accounting(
 
     metrics = await metrics_collector.collect(campaign)
 
-    assert metrics.talk_utilization == pytest.approx(0.6)
+    assert metrics.talk_utilization == pytest.approx(0.6, abs=0.01)
 
 
 async def test_sampler_writes_history_for_running_campaigns(

@@ -281,7 +281,7 @@ async def test_utilization_and_metrics_are_measurable(test_database, metrics_col
 
     metrics = await metrics_collector.collect(campaign)
 
-    assert metrics.talk_utilization == pytest.approx(0.6)
+    assert metrics.talk_utilization == pytest.approx(0.6, abs=0.01)
     assert set(metrics.agent_states) == {state.value for state in AgentState}
     assert metrics.peak_concurrent_calls >= 0
 
