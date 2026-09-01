@@ -39,6 +39,12 @@ def time_accounting_updates(from_state: AgentState, now: datetime) -> dict[str, 
 class AgentRepository(BaseRepository):
     collection_name = COLLECTION_AGENTS
 
+    async def insert_many(self, records: list[Agent]) -> int:
+        if not records:
+            return 0
+        await self.collection.insert_many(record.to_mongo() for record in records)
+        return len(records)
+
     async def try_reserve_agent(
         self,
         campaign_id: str,

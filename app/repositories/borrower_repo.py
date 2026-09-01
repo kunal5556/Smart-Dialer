@@ -27,6 +27,12 @@ RELEASABLE_STATUSES = frozenset({BorrowerStatus.RESERVED, BorrowerStatus.IN_CALL
 class BorrowerRepository(BaseRepository):
     collection_name = COLLECTION_BORROWERS
 
+    async def insert_many(self, records: list[Borrower]) -> int:
+        if not records:
+            return 0
+        await self.collection.insert_many(record.to_mongo() for record in records)
+        return len(records)
+
     async def try_reserve_borrower(
         self,
         campaign_id: str,
@@ -51,6 +57,12 @@ class BorrowerRepository(BaseRepository):
             },
             return_document=ReturnDocument.AFTER,
         )
+        if document is None:
+            return None
+        return Borrower.from_mongo(document)
+
+    async def find_by_id(self, borrower_id: str) -> Borrower | None:
+        document = await self.collection.find_one({"_id": borrower_id})
         if document is None:
             return None
         return Borrower.from_mongo(document)
