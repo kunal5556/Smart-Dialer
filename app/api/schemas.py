@@ -189,6 +189,7 @@ class FaultRequest(BaseModel):
     provider_name: str = "mock_b"
     seconds: float = Field(default=30.0, ge=0.0, le=600.0)
     agents_offline: int = Field(default=5, ge=0, le=10000)
+    campaign_id: str | None = None
 
 
 class FaultResponse(BaseModel):

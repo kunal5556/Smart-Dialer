@@ -21,6 +21,7 @@ async def connect() -> None:
         serverSelectionTimeoutMS=5000,
         uuidRepresentation="standard",
         tz_aware=True,
+        maxPoolSize=settings.MONGO_MAX_POOL_SIZE,
     )
     _database = _client[settings.MONGODB_DB_NAME]
 

@@ -17,10 +17,17 @@ CALL_COUNT = 200
 PROVIDER_NAME = "mock_b"
 
 
-async def drain(provider, timeout_seconds: float = 5.0) -> None:
-    deadline = asyncio.get_running_loop().time() + timeout_seconds
-    while provider._pending_tasks and asyncio.get_running_loop().time() < deadline:
-        await asyncio.sleep(0.01)
+async def drain(provider, database, expected_call_ids, timeout_seconds: float = 30.0) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout_seconds
+    while loop.time() < deadline:
+        if not provider._pending_tasks:
+            outstanding = await database["calls"].count_documents(
+                {"_id": {"$in": expected_call_ids}, "terminal": False}
+            )
+            if outstanding == 0:
+                return
+        await asyncio.sleep(0.02)
 
 
 @pytest.fixture
@@ -99,7 +106,7 @@ async def test_provider_b_soak_keeps_the_system_consistent(
         await call_repository.attach_provider_call_id(call.id, result.provider_call_id)
         originated.append(call.id)
 
-    await drain(soak_provider)
+    await drain(soak_provider, test_database, originated)
     await soak_provider.shutdown()
 
     assert len(originated) > CALL_COUNT // 2

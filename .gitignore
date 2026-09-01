@@ -20,3 +20,11 @@ Thumbs.db
 simulation_results/
 *.simreport.json
 !simulation_results/.gitkeep
+
+.streamlit/secrets.toml
+dashboard/.streamlit/secrets.toml
+dashboard/.env
+
+loadtest_results/
+*.loadreport.json
+!loadtest_results/.gitkeep

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     MONGODB_URI: str
     MONGODB_DB_NAME: str = "smartdialer"
+    MONGO_MAX_POOL_SIZE: int = 20
 
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000

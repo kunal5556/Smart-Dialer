@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: smartdialer-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: MONGODB_URI
+        sync: false
+      - key: API_KEY
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: smartdialer
+      - key: LOG_LEVEL
+        value: INFO
+      - key: DIALER_ENABLED
+        value: "true"
+      - key: RECOVERY_ENABLED
+        value: "true"
+      - key: CORS_ORIGINS
+        value: https://smartdialer-api.onrender.com
+      - key: MONGO_MAX_POOL_SIZE
+        value: "20"

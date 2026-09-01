@@ -449,3 +449,32 @@ def metrics_sampler(
         metrics_repository=metrics_repository,
         settings=test_settings,
     )
+
+
+API_TEST_KEY = "test-secret-key"
+
+
+@pytest.fixture
+def api_client(test_database):
+    from fastapi.testclient import TestClient
+
+    from app.main import app as fastapi_app
+
+    with TestClient(fastapi_app) as client:
+        yield client
+
+
+@pytest.fixture
+def api_client_with_key(test_database, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app.config import get_settings
+    from app.main import app as fastapi_app
+
+    monkeypatch.setenv("API_KEY", API_TEST_KEY)
+    get_settings.cache_clear()
+    try:
+        with TestClient(fastapi_app) as client:
+            yield client
+    finally:
+        get_settings.cache_clear()

@@ -1,3 +1,5 @@
+from enum import Enum
+
 from fastapi import APIRouter, Depends, Request
 
 from app.api.dependencies import get_campaign_repository, require_api_key, require_campaign
@@ -10,10 +12,16 @@ from app.repositories.campaign_repo import CampaignRepository
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
 
+class CampaignAction(str, Enum):
+    START = "start"
+    PAUSE = "pause"
+    STOP = "stop"
+
+
 STATUS_ACTIONS = {
-    "start": CampaignStatus.RUNNING,
-    "pause": CampaignStatus.PAUSED,
-    "stop": CampaignStatus.STOPPED,
+    CampaignAction.START: CampaignStatus.RUNNING,
+    CampaignAction.PAUSE: CampaignStatus.PAUSED,
+    CampaignAction.STOP: CampaignStatus.STOPPED,
 }
 
 
@@ -59,39 +67,6 @@ async def create_campaign(
 
 
 @router.post(
-    "/{campaign_id}/{action}",
-    response_model=CampaignSummary,
-    dependencies=[Depends(require_api_key)],
-)
-async def change_status(
-    action: str,
-    campaign: Campaign = Depends(require_campaign),
-    campaigns: CampaignRepository = Depends(get_campaign_repository),
-) -> CampaignSummary:
-    from app.api.errors import NotFoundError
-
-    target = STATUS_ACTIONS.get(action)
-    if target is None:
-        raise NotFoundError("campaign action", action)
-    updated = await campaigns.set_status(campaign.id, target)
-    return to_summary(updated)
-
-
-@router.patch(
-    "/{campaign_id}/mode",
-    response_model=CampaignSummary,
-    dependencies=[Depends(require_api_key)],
-)
-async def set_mode(
-    payload: SetModeRequest,
-    campaign: Campaign = Depends(require_campaign),
-    campaigns: CampaignRepository = Depends(get_campaign_repository),
-) -> CampaignSummary:
-    updated = await campaigns.set_dialing_mode(campaign.id, payload.dialing_mode)
-    return to_summary(updated)
-
-
-@router.post(
     "/{campaign_id}/seed",
     response_model=dict,
     dependencies=[Depends(require_api_key)],
@@ -123,3 +98,31 @@ async def seed_demo_data(
         "agents_created": len(agents),
         "borrowers_created": len(borrowers),
     }
+
+
+@router.post(
+    "/{campaign_id}/{action}",
+    response_model=CampaignSummary,
+    dependencies=[Depends(require_api_key)],
+)
+async def change_status(
+    action: CampaignAction,
+    campaign: Campaign = Depends(require_campaign),
+    campaigns: CampaignRepository = Depends(get_campaign_repository),
+) -> CampaignSummary:
+    updated = await campaigns.set_status(campaign.id, STATUS_ACTIONS[action])
+    return to_summary(updated)
+
+
+@router.patch(
+    "/{campaign_id}/mode",
+    response_model=CampaignSummary,
+    dependencies=[Depends(require_api_key)],
+)
+async def set_mode(
+    payload: SetModeRequest,
+    campaign: Campaign = Depends(require_campaign),
+    campaigns: CampaignRepository = Depends(get_campaign_repository),
+) -> CampaignSummary:
+    updated = await campaigns.set_dialing_mode(campaign.id, payload.dialing_mode)
+    return to_summary(updated)

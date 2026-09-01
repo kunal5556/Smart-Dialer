@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pymongo.errors import OperationFailure, PyMongoError
 
 from app import __version__
+from app.api import register_api
+from app.db import get_db
 from app.config import Settings, get_settings
 from app.db import connect, disconnect, ping
 from app.db_indexes import ensure_indexes
@@ -36,6 +38,8 @@ from app.services.reservation_service import ReservationService
 from app.services.retry_service import RetryService
 from app.services.wrap_up_service import WrapUpService
 from app.workers.dialer_worker import DialerWorker
+from app.simulation.fault_injector import FaultInjector
+from app.simulation.runner import SimulationRunner
 from app.workers.recovery_worker import RecoveryWorker
 
 logger = logging.getLogger(__name__)
@@ -109,12 +113,21 @@ def build_runtime(app: FastAPI, settings: Settings) -> None:
         settings=settings,
     )
 
+    app.state.campaign_repository = campaigns
+    app.state.agent_repository = agents
+    app.state.borrower_repository = borrowers
+    app.state.call_repository = calls
+    app.state.event_repository = events
+    app.state.decision_repository = decisions
+    app.state.metrics_repository = MetricsRepository()
+    app.state.fault_injector = FaultInjector(registry, events, event_processor)
+    app.state.simulation_runner = SimulationRunner(get_db(), settings)
     app.state.metrics_registry = registry_counters
     app.state.metrics_collector = metrics_collector
     app.state.metrics_sampler = MetricsSampler(
         campaign_repository=campaigns,
         metrics_collector=metrics_collector,
-        metrics_repository=MetricsRepository(),
+        metrics_repository=app.state.metrics_repository,
         settings=settings,
     )
     app.state.health_manager = health_manager
@@ -185,6 +198,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.dialer_worker.stop()
         await app.state.recovery_worker.stop()
         await app.state.metrics_sampler.stop()
+        await app.state.simulation_runner.shutdown()
         await app.state.provider_registry.shutdown()
         await disconnect()
 
@@ -199,6 +213,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    register_api(app)
 
     @app.get("/health")
     async def health(response: Response) -> dict[str, str]:
