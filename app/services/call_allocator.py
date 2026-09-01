@@ -6,6 +6,12 @@ from pymongo.errors import PyMongoError
 
 from app.config import Settings
 from app.logging_config import log_event
+from app.metrics.registry import (
+    COUNTER_PROVIDER_FAILURES,
+    COUNTER_RETRY_ATTEMPTS,
+    COUNTER_RETRY_SUPPRESSED,
+    MetricsRegistry,
+)
 from app.models.campaign import Campaign
 from app.models.enums import AgentState, CallState
 from app.providers.base import OriginateRequest, OriginateResult
@@ -19,6 +25,7 @@ from app.services.provider_health import ProviderHealthManager
 from app.services.retry_service import RetryService
 from app.services.reservation_service import ReservationPair, ReservationService
 from app.state_machines.agent_sm import TransitionActor
+from app.utils.redaction import redact_phone
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +51,7 @@ class CallAllocator:
         health_manager: ProviderHealthManager,
         retry_service: RetryService,
         settings: Settings,
+        registry: MetricsRegistry | None = None,
     ) -> None:
         self._reservations = reservation_service
         self._calls = call_repository
@@ -53,6 +61,7 @@ class CallAllocator:
         self._health = health_manager
         self._retries = retry_service
         self._settings = settings
+        self._registry = registry or MetricsRegistry()
 
     async def allocate(
         self,
@@ -107,6 +116,7 @@ class CallAllocator:
         if pair.borrower.attempt_count > 0 and not self._retries.should_retry(
             pair.borrower, campaign.provider_name
         ):
+            self._registry.increment(COUNTER_RETRY_SUPPRESSED)
             log_event(
                 logger,
                 logging.INFO,
@@ -118,6 +128,9 @@ class CallAllocator:
             )
             await self._release(pair, BorrowerReleaseOutcome.RELEASED)
             return False
+
+        if pair.borrower.attempt_count > 0:
+            self._registry.increment(COUNTER_RETRY_ATTEMPTS)
 
         call = await self._calls.create_call(
             campaign_id=campaign.id,
@@ -147,6 +160,7 @@ class CallAllocator:
 
         result = await self._originate(campaign, pair, call.id)
         if result is None or not result.accepted:
+            self._registry.increment(COUNTER_PROVIDER_FAILURES)
             reason = "provider_timeout" if result is None else result.error_code
             await self._calls.transition_call(
                 call.id, CallState.FAILED, failure_reason=reason
@@ -176,7 +190,8 @@ class CallAllocator:
             logger,
             logging.INFO,
             "call_initiated",
-            f"Call handed to provider {campaign.provider_name}",
+            f"Call handed to provider {campaign.provider_name} "
+            f"for {redact_phone(pair.borrower.phone_number)}",
             campaign_id=campaign.id,
             agent_id=pair.agent.id,
             borrower_id=pair.borrower.id,

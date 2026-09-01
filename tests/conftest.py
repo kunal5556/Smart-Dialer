@@ -21,6 +21,7 @@ from app.repositories.base import (
     COLLECTION_CAMPAIGNS,
     COLLECTION_PACING_DECISIONS,
     COLLECTION_PROVIDER_EVENTS,
+    COLLECTION_METRICS_SAMPLES,
     COLLECTION_PROVIDER_HEALTH_SAMPLES,
     COLLECTION_SAFETY_DECISIONS,
 )
@@ -43,6 +44,10 @@ from app.services.provider_health import ProviderHealthManager
 from app.services.agent_availability import AgentAvailabilityTracker
 from app.services.reservation_service import ReservationService
 from app.services.retry_service import RetryService
+from app.metrics.campaign_metrics import CampaignMetricsCollector
+from app.metrics.collector import MetricsSampler
+from app.metrics.registry import MetricsRegistry
+from app.repositories.metrics_repo import MetricsRepository
 from app.services.wrap_up_service import WrapUpService
 from app.workers.recovery_worker import RecoveryWorker
 from app.state_machines.agent_sm import TransitionActor
@@ -180,7 +185,9 @@ CALL_COLLECTIONS = (
     COLLECTION_BORROWERS,
     COLLECTION_CALLS,
     COLLECTION_PROVIDER_EVENTS,
+    COLLECTION_METRICS_SAMPLES,
     COLLECTION_PROVIDER_HEALTH_SAMPLES,
+    COLLECTION_METRICS_SAMPLES,
     COLLECTION_PACING_DECISIONS,
     COLLECTION_SAFETY_DECISIONS,
 )
@@ -405,5 +412,40 @@ def recovery_worker(
         call_repository=call_repository,
         provider_registry=fast_provider_registry,
         retry_service=retry_service,
+        settings=test_settings,
+    )
+
+
+@pytest.fixture
+def metrics_registry() -> MetricsRegistry:
+    return MetricsRegistry()
+
+
+@pytest.fixture
+def metrics_repository(test_database) -> MetricsRepository:
+    return MetricsRepository(test_database)
+
+
+@pytest.fixture
+def metrics_collector(
+    agent_repository, call_repository, decision_repository, metrics_registry, test_settings
+) -> CampaignMetricsCollector:
+    return CampaignMetricsCollector(
+        agent_repository=agent_repository,
+        call_repository=call_repository,
+        decision_repository=decision_repository,
+        registry=metrics_registry,
+        settings=test_settings,
+    )
+
+
+@pytest.fixture
+def metrics_sampler(
+    campaign_repository, metrics_collector, metrics_repository, test_settings
+) -> MetricsSampler:
+    return MetricsSampler(
+        campaign_repository=campaign_repository,
+        metrics_collector=metrics_collector,
+        metrics_repository=metrics_repository,
         settings=test_settings,
     )

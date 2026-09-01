@@ -6,6 +6,8 @@ from typing import Any
 
 CONTEXT_FIELDS = ("campaign_id", "agent_id", "borrower_id", "call_id", "worker_id")
 
+NOISY_LOGGERS = ("pymongo", "motor", "asyncio")
+
 
 class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
@@ -32,6 +34,9 @@ def configure_logging() -> None:
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
     root_logger.setLevel(get_settings().LOG_LEVEL.upper())
+
+    for name in NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def log_event(

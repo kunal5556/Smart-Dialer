@@ -62,3 +62,22 @@ class EventRepository(BaseRepository):
     async def find_for_call(self, provider_call_id: str) -> list[ProviderEventDocument]:
         cursor = self.collection.find({"provider_call_id": provider_call_id}).sort("received_at", 1)
         return [ProviderEventDocument.from_mongo(document) async for document in cursor]
+
+    async def find_provider_events_for_call(self, provider_call_id: str) -> list[ProviderEvent]:
+        stored = await self.find_for_call(provider_call_id)
+        return [self._to_provider_event(document) for document in stored]
+
+    async def find_latest(self, limit: int) -> list[ProviderEvent]:
+        cursor = self.collection.find({}).sort("received_at", -1).limit(limit)
+        stored = [ProviderEventDocument.from_mongo(document) async for document in cursor]
+        return [self._to_provider_event(document) for document in reversed(stored)]
+
+    @staticmethod
+    def _to_provider_event(document: ProviderEventDocument) -> ProviderEvent:
+        return ProviderEvent(
+            provider_name=document.provider_name,
+            provider_event_id=document.provider_event_id,
+            provider_call_id=document.provider_call_id,
+            event_type=document.event_type,
+            provider_timestamp=document.provider_timestamp or document.received_at,
+        )

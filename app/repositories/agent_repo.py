@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pymongo import ASCENDING, ReturnDocument
 
@@ -16,6 +17,23 @@ from app.state_machines.agent_sm import (
     allowed_sources,
     validate_transition,
 )
+
+
+TIME_ACCOUNTING_FIELDS: dict[AgentState, tuple[str, ...]] = {
+    AgentState.AVAILABLE: ("available_time_ms",),
+    AgentState.RESERVED: ("busy_time_ms",),
+    AgentState.DIALING: ("busy_time_ms",),
+    AgentState.CONNECTED: ("busy_time_ms", "connected_time_ms"),
+    AgentState.WRAP_UP: ("busy_time_ms", "wrap_up_time_ms"),
+}
+
+
+def time_accounting_updates(from_state: AgentState, now: datetime) -> dict[str, Any]:
+    fields = TIME_ACCOUNTING_FIELDS.get(from_state, ())
+    elapsed = {
+        "$max": [0, {"$subtract": [now, {"$ifNull": ["$state_changed_at", now]}]}]
+    }
+    return {field: {"$add": [f"${field}", elapsed]} for field in fields}
 
 
 class AgentRepository(BaseRepository):
@@ -73,26 +91,47 @@ class AgentRepository(BaseRepository):
         if not sources:
             return None
         now = self.now()
+        accounting = {
+            source: time_accounting_updates(source, now) for source in sources
+        }
         document = await self.collection.find_one_and_update(
             {
                 "_id": agent_id,
                 "reserved_by": worker_id,
                 "state": {"$in": sorted(state.value for state in sources)},
             },
-            {
-                "$set": {
-                    "state": target_state.value,
-                    "state_changed_at": now,
-                    "current_call_id": None,
-                    **cleared_lease_fields(),
-                },
-                "$inc": {"state_version": 1},
-            },
+            [
+                {
+                    "$set": {
+                        **self._conditional_accounting(accounting),
+                        "state": target_state.value,
+                        "state_changed_at": now,
+                        "current_call_id": None,
+                        "state_version": {"$add": ["$state_version", 1]},
+                        **cleared_lease_fields(),
+                    }
+                }
+            ],
             return_document=ReturnDocument.AFTER,
         )
         if document is None:
             return None
         return Agent.from_mongo(document)
+
+    @staticmethod
+    def _conditional_accounting(
+        accounting: dict[AgentState, dict[str, Any]],
+    ) -> dict[str, Any]:
+        fields = {field for updates in accounting.values() for field in updates}
+        result: dict[str, Any] = {}
+        for field in sorted(fields):
+            branches = [
+                {"case": {"$eq": ["$state", state.value]}, "then": updates[field]}
+                for state, updates in accounting.items()
+                if field in updates
+            ]
+            result[field] = {"$switch": {"branches": branches, "default": f"${field}"}}
+        return result
 
     async def transition_agent(
         self,
@@ -110,10 +149,16 @@ class AgentRepository(BaseRepository):
                 "state": from_state.value,
                 "state_version": expected_version,
             },
-            {
-                "$set": {"state": to_state.value, "state_changed_at": now},
-                "$inc": {"state_version": 1},
-            },
+            [
+                {
+                    "$set": {
+                        "state": to_state.value,
+                        "state_changed_at": now,
+                        "state_version": {"$add": ["$state_version", 1]},
+                        **time_accounting_updates(from_state, now),
+                    }
+                }
+            ],
             return_document=ReturnDocument.AFTER,
         )
         if document is None:
@@ -214,6 +259,10 @@ class AgentRepository(BaseRepository):
                 "state_changed_at": {"$lte": older_than},
             }
         )
+
+    async def find_for_campaign(self, campaign_id: str, limit: int = 10000) -> list[Agent]:
+        cursor = self.collection.find({"campaign_id": campaign_id}).limit(limit)
+        return [Agent.from_mongo(document) async for document in cursor]
 
     async def find_by_id(self, agent_id: str) -> Agent | None:
         document = await self.collection.find_one({"_id": agent_id})

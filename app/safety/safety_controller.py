@@ -165,7 +165,7 @@ class SafetyController:
 
         failure_rate = 0.0
         if outcomes["total"]:
-            failure_rate = outcomes["failed"] / outcomes["total"]
+            failure_rate = outcomes["system_failed"] / outcomes["total"]
 
         return CapacityReading(
             available_agents=agent_counts[AgentState.AVAILABLE],

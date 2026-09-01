@@ -1,4 +1,5 @@
 from app.models.decisions import PacingDecision, SafetyConstraintRecord
+from app.models.enums import SafetyVerdict
 from app.models.decisions import SafetyDecision as SafetyDecisionDocument
 from app.repositories.base import (
     COLLECTION_PACING_DECISIONS,
@@ -52,6 +53,16 @@ class DecisionRepository(BaseRepository):
         )
         await self.collection.insert_one(document.to_mongo())
         return document
+
+    async def count_by_verdict(self, campaign_id: str) -> dict[SafetyVerdict, int]:
+        pipeline = [
+            {"$match": {"campaign_id": campaign_id}},
+            {"$group": {"_id": "$verdict", "count": {"$sum": 1}}},
+        ]
+        counts: dict[SafetyVerdict, int] = {}
+        async for row in self.collection.aggregate(pipeline):
+            counts[SafetyVerdict(row["_id"])] = row["count"]
+        return counts
 
     async def find_recent_pacing_decisions(
         self,

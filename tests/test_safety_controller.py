@@ -168,7 +168,11 @@ async def test_unresolved_expired_leases_reject_everything(
         campaign_id=campaign.id,
         agent_id=agents[0].id,
         worker_id="dead-worker",
-        ttl_seconds=0,
+        ttl_seconds=30,
+    )
+    await test_database["agents"].update_one(
+        {"_id": agents[0].id},
+        {"$set": {"lease_expires_at": utc_now() - timedelta(seconds=60)}},
     )
 
     decision = await safety_controller.evaluate(campaign, make_request(4))

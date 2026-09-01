@@ -14,6 +14,9 @@ from app.dialers.mode_router import ModeRouter
 from app.dialers.predictive_dialer import PredictiveDialer
 from app.dialers.progressive_dialer import ProgressiveDialer
 from app.logging_config import configure_logging, log_event
+from app.metrics.campaign_metrics import CampaignMetricsCollector
+from app.metrics.collector import MetricsSampler
+from app.metrics.registry import MetricsRegistry
 from app.pacing.metrics_snapshot import MetricsSnapshotBuilder
 from app.providers.base import ProviderEvent
 from app.providers.registry import build_registry
@@ -23,6 +26,7 @@ from app.repositories.call_repo import CallRepository
 from app.repositories.campaign_repo import CampaignRepository
 from app.repositories.decision_repo import DecisionRepository
 from app.repositories.event_repo import EventRepository
+from app.repositories.metrics_repo import MetricsRepository
 from app.safety.safety_controller import SafetyController
 from app.services.call_allocator import CallAllocator
 from app.services.agent_availability import AgentAvailabilityTracker
@@ -45,6 +49,7 @@ def build_runtime(app: FastAPI, settings: Settings) -> None:
     events = EventRepository()
     decisions = DecisionRepository()
 
+    registry_counters = MetricsRegistry()
     health_manager = ProviderHealthManager(settings)
     retry_service = RetryService(health_manager, settings)
     availability_tracker = AgentAvailabilityTracker(settings)
@@ -62,7 +67,7 @@ def build_runtime(app: FastAPI, settings: Settings) -> None:
         await event_processor.process_event(event)
 
     registry = build_registry(on_event=on_event, seed=settings.PROVIDER_RANDOM_SEED)
-    reservations = ReservationService(agents, borrowers, settings)
+    reservations = ReservationService(agents, borrowers, settings, registry_counters)
     allocator = CallAllocator(
         reservation_service=reservations,
         call_repository=calls,
@@ -72,6 +77,7 @@ def build_runtime(app: FastAPI, settings: Settings) -> None:
         health_manager=health_manager,
         retry_service=retry_service,
         settings=settings,
+        registry=registry_counters,
     )
     safety_controller = SafetyController(
         agent_repository=agents,
@@ -95,6 +101,22 @@ def build_runtime(app: FastAPI, settings: Settings) -> None:
         predictive_dialer=PredictiveDialer(**dialer_arguments),
     )
 
+    metrics_collector = CampaignMetricsCollector(
+        agent_repository=agents,
+        call_repository=calls,
+        decision_repository=decisions,
+        registry=registry_counters,
+        settings=settings,
+    )
+
+    app.state.metrics_registry = registry_counters
+    app.state.metrics_collector = metrics_collector
+    app.state.metrics_sampler = MetricsSampler(
+        campaign_repository=campaigns,
+        metrics_collector=metrics_collector,
+        metrics_repository=MetricsRepository(),
+        settings=settings,
+    )
     app.state.health_manager = health_manager
     app.state.event_processor = event_processor
     app.state.provider_registry = registry
@@ -155,11 +177,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.recovery_worker.start()
         log_event(logger, logging.INFO, "startup_recovery_started", "Recovery worker started")
 
+    app.state.metrics_sampler.start()
+
     try:
         yield
     finally:
         await app.state.dialer_worker.stop()
         await app.state.recovery_worker.stop()
+        await app.state.metrics_sampler.stop()
         await app.state.provider_registry.shutdown()
         await disconnect()
 

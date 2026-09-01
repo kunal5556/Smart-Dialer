@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pymongo.errors import PyMongoError
 
 from app.config import Settings
+from app.metrics.registry import COUNTER_RESERVATION_CONTENTION, MetricsRegistry
 from app.logging_config import log_event
 from app.models.agent import Agent
 from app.models.borrower import Borrower
@@ -29,10 +30,12 @@ class ReservationService:
         agent_repository: AgentRepository,
         borrower_repository: BorrowerRepository,
         settings: Settings,
+        registry: MetricsRegistry | None = None,
     ) -> None:
         self._agents = agent_repository
         self._borrowers = borrower_repository
         self._settings = settings
+        self._registry = registry or MetricsRegistry()
 
     async def reserve_pair(self, campaign_id: str, worker_id: str) -> ReservationPair | None:
         agent = await self._claim_agent(campaign_id, worker_id)
@@ -81,6 +84,7 @@ class ReservationService:
             )
             if agent is not None:
                 return agent
+            self._registry.increment(COUNTER_RESERVATION_CONTENTION)
             log_event(
                 logger,
                 logging.DEBUG,
@@ -103,6 +107,7 @@ class ReservationService:
             )
             if borrower is not None:
                 return borrower
+            self._registry.increment(COUNTER_RESERVATION_CONTENTION)
             log_event(
                 logger,
                 logging.DEBUG,

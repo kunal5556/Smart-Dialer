@@ -8,6 +8,8 @@ from app.models.enums import CallState
 from app.repositories.base import COLLECTION_CALLS, BaseRepository
 from app.state_machines.call_sm import is_terminal, rank
 
+EXPECTED_CALL_OUTCOMES = ("no_answer", "busy")
+
 STATE_TIMESTAMP_FIELDS: dict[CallState, str] = {
     CallState.INITIATED: "initiated_at",
     CallState.RINGING: "ringing_at",
@@ -110,6 +112,24 @@ class CallRepository(BaseRepository):
             return None
         return Call.from_mongo(document)
 
+    async def find_active(self, campaign_id: str, limit: int = 5000) -> list[Call]:
+        cursor = self.collection.find(
+            {"campaign_id": campaign_id, "terminal": False, "state": {"$ne": CallState.QUEUED.value}}
+        ).limit(limit)
+        return [Call.from_mongo(document) async for document in cursor]
+
+    async def find_recent(
+        self,
+        campaign_id: str,
+        limit: int,
+        state: CallState | None = None,
+    ) -> list[Call]:
+        query: dict = {"campaign_id": campaign_id}
+        if state is not None:
+            query["state"] = state.value
+        cursor = self.collection.find(query).sort("created_at", -1).limit(limit)
+        return [Call.from_mongo(document) async for document in cursor]
+
     async def find_stale_calls(self, older_than: datetime, limit: int) -> list[Call]:
         cursor = (
             self.collection.find({"terminal": False, "updated_at": {"$lt": older_than}})
@@ -144,14 +164,38 @@ class CallRepository(BaseRepository):
                             "$cond": [{"$eq": ["$state", CallState.FAILED.value]}, 1, 0]
                         }
                     },
+                    "system_failed": {
+                        "$sum": {
+                            "$cond": [
+                                {
+                                    "$and": [
+                                        {"$eq": ["$state", CallState.FAILED.value]},
+                                        {
+                                            "$not": [
+                                                {
+                                                    "$in": [
+                                                        "$failure_reason",
+                                                        list(EXPECTED_CALL_OUTCOMES),
+                                                    ]
+                                                }
+                                            ]
+                                        },
+                                    ]
+                                },
+                                1,
+                                0,
+                            ]
+                        }
+                    },
                 }
             },
         ]
-        counts = {"total": 0, "answered": 0, "failed": 0}
+        counts = {"total": 0, "answered": 0, "failed": 0, "system_failed": 0}
         async for row in self.collection.aggregate(pipeline):
             counts["total"] = row["total"]
             counts["answered"] = row["answered"]
             counts["failed"] = row["failed"]
+            counts["system_failed"] = row["system_failed"]
         return counts
 
     async def average_talk_time_seconds(self, campaign_id: str) -> float:

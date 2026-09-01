@@ -19,4 +19,6 @@ class Agent(MongoModel):
     state_changed_at: datetime = Field(default_factory=utc_now)
     busy_time_ms: int = Field(default=0, ge=0)
     available_time_ms: int = Field(default=0, ge=0)
+    connected_time_ms: int = Field(default=0, ge=0)
+    wrap_up_time_ms: int = Field(default=0, ge=0)
     created_at: datetime = Field(default_factory=utc_now)

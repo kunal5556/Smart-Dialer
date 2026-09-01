@@ -1,6 +1,7 @@
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, IndexModel
 
+from app.config import get_settings
 from app.db import get_db
 from app.repositories.base import (
     COLLECTION_AGENTS,
@@ -8,6 +9,7 @@ from app.repositories.base import (
     COLLECTION_CALLS,
     COLLECTION_PACING_DECISIONS,
     COLLECTION_PROVIDER_EVENTS,
+    COLLECTION_METRICS_SAMPLES,
     COLLECTION_PROVIDER_HEALTH_SAMPLES,
     COLLECTION_SAFETY_DECISIONS,
 )
@@ -95,10 +97,27 @@ INDEXES_BY_COLLECTION: dict[str, list[IndexModel]] = {
             name="provider_health_samples_provider_computed_at",
         ),
     ],
+    COLLECTION_METRICS_SAMPLES: [
+        IndexModel(
+            [("campaign_id", ASCENDING), ("collected_at", ASCENDING)],
+            name="metrics_samples_campaign_collected_at",
+        ),
+    ],
 }
+
+
+def metrics_retention_index(retention_minutes: int) -> IndexModel:
+    return IndexModel(
+        [("collected_at", ASCENDING)],
+        name="metrics_samples_ttl",
+        expireAfterSeconds=retention_minutes * 60,
+    )
 
 
 async def ensure_indexes(database: AsyncIOMotorDatabase | None = None) -> None:
     target = database if database is not None else get_db()
     for collection_name, indexes in INDEXES_BY_COLLECTION.items():
         await target[collection_name].create_indexes(indexes)
+    await target[COLLECTION_METRICS_SAMPLES].create_indexes(
+        [metrics_retention_index(get_settings().METRICS_RETENTION_MINUTES)]
+    )

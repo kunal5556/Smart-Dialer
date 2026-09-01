@@ -72,12 +72,14 @@ async def test_expired_borrower_lease_is_reclaimed(
 ):
     campaign = await insert_campaign(test_database)
     [borrower] = await insert_borrowers(test_database, campaign.id, 1)
-    await borrower_repository.try_reserve_borrower(
+    reserved = await borrower_repository.try_reserve_borrower(
         campaign_id=campaign.id,
         borrower_id=borrower.id,
         worker_id="dead-worker",
-        ttl_seconds=0,
+        ttl_seconds=30,
     )
+    assert reserved is not None
+    await expire_lease(test_database, "borrowers", borrower.id)
 
     counts = await recovery_worker.run_sweeps()
 
@@ -213,8 +215,9 @@ async def test_sweeps_are_bounded_by_the_configured_limit(
             campaign_id=campaign.id,
             borrower_id=borrower.id,
             worker_id="dead-worker",
-            ttl_seconds=0,
+            ttl_seconds=30,
         )
+        await expire_lease(test_database, "borrowers", borrower.id)
     test_settings.RECOVERY_SWEEP_LIMIT = 2
 
     counts = await recovery_worker.run_sweeps()
