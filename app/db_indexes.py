@@ -114,10 +114,25 @@ def metrics_retention_index(retention_minutes: int) -> IndexModel:
     )
 
 
+def decision_retention_index(name: str, retention_minutes: int) -> IndexModel:
+    return IndexModel(
+        [("created_at", ASCENDING)],
+        name=name,
+        expireAfterSeconds=retention_minutes * 60,
+    )
+
+
 async def ensure_indexes(database: AsyncIOMotorDatabase | None = None) -> None:
     target = database if database is not None else get_db()
+    settings = get_settings()
     for collection_name, indexes in INDEXES_BY_COLLECTION.items():
         await target[collection_name].create_indexes(indexes)
     await target[COLLECTION_METRICS_SAMPLES].create_indexes(
-        [metrics_retention_index(get_settings().METRICS_RETENTION_MINUTES)]
+        [metrics_retention_index(settings.METRICS_RETENTION_MINUTES)]
+    )
+    await target[COLLECTION_PACING_DECISIONS].create_indexes(
+        [decision_retention_index("pacing_decisions_ttl", settings.DECISION_RETENTION_MINUTES)]
+    )
+    await target[COLLECTION_SAFETY_DECISIONS].create_indexes(
+        [decision_retention_index("safety_decisions_ttl", settings.DECISION_RETENTION_MINUTES)]
     )
