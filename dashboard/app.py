@@ -69,7 +69,7 @@ def main() -> None:
         client = build_client()
     except MissingConfiguration as error:
         st.error(str(error))
-        st.stop()
+        return
 
     st.sidebar.header("Controls")
     auto_refresh = st.sidebar.toggle("Auto refresh (2s)", value=True)
@@ -79,11 +79,11 @@ def main() -> None:
         campaigns = client.list_campaigns()
     except Exception as error:
         render_error(error)
-        st.stop()
+        return
 
     if not campaigns:
         st.info("No campaigns yet. Create one through the API or seed demo data.")
-        st.stop()
+        return
 
     labels = {f"{item['name']} ({item['status']})": item for item in campaigns}
     chosen_label = st.sidebar.selectbox("Campaign", list(labels))

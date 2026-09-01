@@ -9,7 +9,7 @@ from app.models.base import utc_now
 from app.models.call import Call, build_idempotency_key
 from app.models.enums import AgentState, CallState, DialingMode, SafetyVerdict
 from app.safety.models import PacingRequest
-from tests.conftest import insert_agents, insert_borrowers, insert_campaign
+from tests.conftest import insert_agents, insert_campaign
 
 pytestmark = pytest.mark.usefixtures("clean_call_collections")
 

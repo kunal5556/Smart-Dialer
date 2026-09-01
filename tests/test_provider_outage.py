@@ -1,11 +1,8 @@
-import asyncio
-
 import pytest
 
 from app.models.base import utc_now
 from app.models.enums import (
     AgentState,
-    BorrowerStatus,
     CallState,
     DialingMode,
     ProviderHealthStatus,

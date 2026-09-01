@@ -279,6 +279,8 @@ class SafetyController:
         approved: int,
         fallback_reason: str | None,
     ) -> SafetyVerdict:
+        if requested == 0:
+            return SafetyVerdict.APPROVED
         if fallback_reason is not None and approved > 0:
             return SafetyVerdict.FALLBACK_PROGRESSIVE
         if approved == 0:

@@ -310,3 +310,27 @@ async def test_high_failure_rate_caps_at_progressive_equivalent(
     assert decision.approved == 5
     assert decision.fallback_reason == "high_failure_rate"
     assert decision.verdict is SafetyVerdict.FALLBACK_PROGRESSIVE
+
+
+async def test_a_tick_that_asks_for_nothing_is_not_a_rejection(
+    test_database, safety_controller
+):
+    campaign = await insert_campaign(test_database)
+    await insert_agents(test_database, campaign.id, 5, state=AgentState.AVAILABLE)
+
+    decision = await safety_controller.evaluate(campaign, make_request(0))
+
+    assert decision.requested == 0
+    assert decision.approved == 0
+    assert decision.verdict is SafetyVerdict.APPROVED
+    assert decision.binding_constraint is None
+
+
+async def test_a_real_request_blocked_to_zero_is_still_a_rejection(
+    test_database, safety_controller
+):
+    campaign = await insert_campaign(test_database)
+
+    decision = await safety_controller.evaluate(campaign, make_request(10))
+
+    assert decision.verdict is SafetyVerdict.REJECTED

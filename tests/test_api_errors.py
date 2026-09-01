@@ -1,6 +1,6 @@
 import pytest
 
-from tests.conftest import API_TEST_KEY, insert_campaign
+from tests.conftest import API_TEST_KEY
 
 pytestmark = pytest.mark.usefixtures("clean_call_collections")
 
