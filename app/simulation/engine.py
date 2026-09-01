@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.config import Settings
+from app.db_indexes import ensure_indexes
 from app.dialers.mode_router import ModeRouter
 from app.dialers.predictive_dialer import PredictiveDialer
 from app.dialers.progressive_dialer import ProgressiveDialer
@@ -12,6 +13,7 @@ from app.logging_config import log_event
 from app.metrics.campaign_metrics import CampaignMetrics, CampaignMetricsCollector
 from app.metrics.registry import MetricsRegistry
 from app.models.agent import Agent
+from app.models.base import utc_now
 from app.models.borrower import Borrower
 from app.models.campaign import Campaign, PacingConfig
 from app.models.enums import AgentState, CampaignStatus
@@ -43,6 +45,16 @@ from app.workers.recovery_worker import RecoveryWorker
 logger = logging.getLogger(__name__)
 
 INVARIANT_CHECK_INTERVAL_SECONDS = 0.1
+
+SIMULATION_COLLECTIONS = (
+    "campaigns",
+    "agents",
+    "borrowers",
+    "calls",
+    "provider_events",
+    "pacing_decisions",
+    "safety_decisions",
+)
 
 
 @dataclass
@@ -93,6 +105,8 @@ class SimulationEngine:
             await components["recovery"].stop()
             await simulator.stop()
             await components["registry"].shutdown()
+            await self._stop_campaign(campaign.id)
+            await components["recovery"].run_sweeps()
 
         report.violations.extend(
             await components["invariants"].check(campaign.id, final=True)
@@ -240,7 +254,8 @@ class SimulationEngine:
         }
 
     async def _seed(self, config: SimulationConfig) -> Campaign:
-        for collection in ("campaigns", "agents", "borrowers", "calls", "provider_events"):
+        await ensure_indexes(self._database)
+        for collection in SIMULATION_COLLECTIONS:
             await self._database[collection].delete_many({})
 
         campaign = Campaign(
@@ -270,6 +285,12 @@ class SimulationEngine:
             for number in range(1, config.borrowers + 1)
         )
         return campaign
+
+    async def _stop_campaign(self, campaign_id: str) -> None:
+        await self._database["campaigns"].update_one(
+            {"_id": campaign_id},
+            {"$set": {"status": CampaignStatus.STOPPED.value, "updated_at": utc_now()}},
+        )
 
     async def _reload(self, campaign_id: str) -> Campaign:
         document = await self._database["campaigns"].find_one({"_id": campaign_id})

@@ -8,7 +8,7 @@ from pymongo.errors import OperationFailure, PyMongoError
 
 from app import __version__
 from app.api import register_api
-from app.db import get_db
+from app.db import get_db, get_simulation_db
 from app.config import Settings, get_settings
 from app.db import connect, disconnect, ping
 from app.db_indexes import ensure_indexes
@@ -121,7 +121,7 @@ def build_runtime(app: FastAPI, settings: Settings) -> None:
     app.state.decision_repository = decisions
     app.state.metrics_repository = MetricsRepository()
     app.state.fault_injector = FaultInjector(registry, events, event_processor)
-    app.state.simulation_runner = SimulationRunner(get_db(), settings)
+    app.state.simulation_runner = SimulationRunner(get_simulation_db(), settings)
     app.state.metrics_registry = registry_counters
     app.state.metrics_collector = metrics_collector
     app.state.metrics_sampler = MetricsSampler(
