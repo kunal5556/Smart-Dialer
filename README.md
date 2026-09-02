@@ -428,6 +428,7 @@ MongoDB is the **single authoritative source of truth**. There is no cache, deli
 | `safety_decisions` | requested vs approved, all constraints, binding one | `(campaign_id, created_at)` |
 | `metrics_samples` | periodic campaign snapshots | TTL index for retention |
 | `provider_health_samples` | health history | `(provider_name, computed_at)` |
+| `simulation_runs` | run history, status and final report | `started_at` desc, `status` |
 
 Ignored events are stored too, with their reason. "We saw it and chose to ignore it" is far more
 defensible than silence.

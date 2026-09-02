@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -45,6 +46,9 @@ from app.workers.recovery_worker import RecoveryWorker
 logger = logging.getLogger(__name__)
 
 INVARIANT_CHECK_INTERVAL_SECONDS = 0.1
+DRAIN_POLL_SECONDS = 0.05
+DRAIN_BUDGET_MULTIPLIER = 2.0
+MIN_DRAIN_SECONDS = 1.0
 
 SIMULATION_COLLECTIONS = (
     "campaigns",
@@ -102,11 +106,12 @@ class SimulationEngine:
         finally:
             for worker in workers:
                 await worker.stop()
+            await self._stop_campaign(campaign.id)
+            await self._drain(config, components, campaign.id)
             await components["recovery"].stop()
             await simulator.stop()
             await components["registry"].shutdown()
-            await self._stop_campaign(campaign.id)
-            await components["recovery"].run_sweeps()
+            await self._settle(components, campaign.id)
 
         report.violations.extend(
             await components["invariants"].check(campaign.id, final=True)
@@ -229,6 +234,9 @@ class SimulationEngine:
 
         return {
             "registry": registry,
+            "agents": agents,
+            "borrowers": borrowers,
+            "calls": calls,
             "invariants": InvariantChecker(agents, calls, self._settings),
             "metrics": CampaignMetricsCollector(
                 agent_repository=agents,
@@ -285,6 +293,48 @@ class SimulationEngine:
             for number in range(1, config.borrowers + 1)
         )
         return campaign
+
+    async def _drain(
+        self,
+        config: SimulationConfig,
+        components: dict,
+        campaign_id: str,
+    ) -> None:
+        calls = components["calls"]
+        budget = max(
+            MIN_DRAIN_SECONDS,
+            config.scaled(config.ring_duration_seconds + config.avg_talk_time_seconds)
+            * DRAIN_BUDGET_MULTIPLIER,
+        )
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + budget
+
+        while loop.time() < deadline:
+            if not await calls.find_active(campaign_id):
+                return
+            await asyncio.sleep(DRAIN_POLL_SECONDS)
+
+        remaining = len(await calls.find_active(campaign_id))
+        if remaining:
+            log_event(
+                logger,
+                logging.INFO,
+                "simulation_drain_incomplete",
+                f"{remaining} calls were still active after {budget:.2f}s of draining",
+                campaign_id=campaign_id,
+            )
+
+    async def _settle(self, components: dict, campaign_id: str) -> None:
+        expiry = utc_now() - timedelta(seconds=1)
+        await self._database["agents"].update_many(
+            {"campaign_id": campaign_id, "reserved_by": {"$ne": None}},
+            {"$set": {"lease_expires_at": expiry}},
+        )
+        await self._database["borrowers"].update_many(
+            {"campaign_id": campaign_id, "reserved_by": {"$ne": None}},
+            {"$set": {"lease_expires_at": expiry}},
+        )
+        await components["recovery"].run_sweeps()
 
     async def _stop_campaign(self, campaign_id: str) -> None:
         await self._database["campaigns"].update_one(

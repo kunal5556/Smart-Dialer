@@ -1,5 +1,5 @@
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from pymongo import ASCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, IndexModel
 
 from app.config import get_settings
 from app.db import get_db
@@ -10,6 +10,7 @@ from app.repositories.base import (
     COLLECTION_PACING_DECISIONS,
     COLLECTION_PROVIDER_EVENTS,
     COLLECTION_METRICS_SAMPLES,
+    COLLECTION_SIMULATION_RUNS,
     COLLECTION_PROVIDER_HEALTH_SAMPLES,
     COLLECTION_SAFETY_DECISIONS,
 )
@@ -102,6 +103,10 @@ INDEXES_BY_COLLECTION: dict[str, list[IndexModel]] = {
             [("campaign_id", ASCENDING), ("collected_at", ASCENDING)],
             name="metrics_samples_campaign_collected_at",
         ),
+    ],
+    COLLECTION_SIMULATION_RUNS: [
+        IndexModel([("started_at", DESCENDING)], name="simulation_runs_started_at"),
+        IndexModel([("status", ASCENDING)], name="simulation_runs_status"),
     ],
 }
 
